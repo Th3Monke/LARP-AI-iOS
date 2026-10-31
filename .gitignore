@@ -1,0 +1,6 @@
+.cache/
+Frameworks/
+build/
+*.xcodeproj/
+Payload/
+*.ipa
