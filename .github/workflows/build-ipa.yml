@@ -1,0 +1,63 @@
+name: Build unsigned IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get llama.cpp for iPhone (b11874)
+        run: |
+          curl -fsSL -o xcf.zip https://github.com/ggml-org/llama.cpp/releases/download/b11874/llama-b11874-xcframework.zip
+          unzip -q xcf.zip
+          mkdir -p Frameworks
+          rm -rf Frameworks/llama.xcframework
+          mv build-apple/llama.xcframework Frameworks/
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build (no code signing)
+        run: |
+          set -o pipefail
+          xcodebuild -project LARPAI.xcodeproj -scheme LARPAI -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/Build/Products/Release-iphoneos/LARPAI.app
+
+      - name: Package the .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/LARPAI.app Payload/
+          zip -qry "LARP.AI-unsigned.ipa" Payload
+          ls -la "LARP.AI-unsigned.ipa"
+
+      - name: Publish the .ipa
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ios-latest --yes --cleanup-tag || true
+          gh release create ios-latest "LARP.AI-unsigned.ipa" --prerelease --title "LARP.AI for iPhone (unsigned)" \
+            --notes "Unsigned build from ${GITHUB_SHA::7}. Sign it with your own tool (Sideloadly, AltStore, eSign...)."
+
+      - name: Publish the build log (only if something failed)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          grep -E "error:|Error|failed" build.log | head -150 > errors.txt || true
+          tail -300 build.log >> errors.txt || true
+          gh release delete ios-build-log --yes --cleanup-tag || true
+          gh release create ios-build-log errors.txt --prerelease --title "iOS build log" --notes "Build failed at ${GITHUB_SHA::7}."
