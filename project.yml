@@ -2,7 +2,7 @@ name: LARPAI
 options:
   bundleIdPrefix: ai.larp
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "16.4"
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -47,3 +47,19 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_BITCODE: "NO"
         GENERATE_INFOPLIST_FILE: "NO"
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+    postBuildScripts:
+      - name: Make the build sideload-friendly
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          APP="${TARGET_BUILD_DIR}/${WRAPPER_NAME}"
+          ICON="${SRCROOT}/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+          # Signing tools show these loose icons, but Xcode stores them in Apple's CgBI PNG format
+          # that other tools can't read. Replace them with normal PNGs (the home screen uses Assets.car).
+          if [ -f "$APP/AppIcon60x60@2x.png" ]; then sips -s format png -z 120 120 "$ICON" --out "$APP/AppIcon60x60@2x.png" >/dev/null; fi
+          if [ -f "$APP/AppIcon76x76@2x~ipad.png" ]; then sips -s format png -z 152 152 "$ICON" --out "$APP/AppIcon76x76@2x~ipad.png" >/dev/null; fi
+          # Ad-hoc signature (inside out), so re-signing tools have a signature to replace.
+          for f in "$APP"/Frameworks/*.framework; do codesign --force --sign - --timestamp=none "$f"; done
+          codesign --force --sign - --timestamp=none "$APP"
+          codesign --verify --deep --strict "$APP" && echo "ad-hoc signature OK"
