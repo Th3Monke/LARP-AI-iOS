@@ -14,15 +14,46 @@ struct LarpApp: App {
     }
 }
 
+/// The app's colors. They follow Settings → Look (app color + background); views that read them
+/// observe AppState, so they redraw when it changes.
 enum Theme {
-    static let bg = Color(red: 0.122, green: 0.122, blue: 0.118)
-    static let panel = Color(red: 0.165, green: 0.165, blue: 0.157)
-    static let raise = Color(red: 0.19, green: 0.19, blue: 0.18)
-    static let line = Color(red: 0.22, green: 0.22, blue: 0.21)
+    private(set) static var bg = Color(red: 0.122, green: 0.122, blue: 0.118)
+    private(set) static var panel = Color(red: 0.165, green: 0.165, blue: 0.157)
+    private(set) static var raise = Color(red: 0.19, green: 0.19, blue: 0.18)
+    private(set) static var line = Color(red: 0.22, green: 0.22, blue: 0.21)
     static let mute = Color(red: 0.65, green: 0.64, blue: 0.61)
+
+    @MainActor static func update(_ state: AppState) {
+        let shades: [(Double, Double, Double)]
+        switch state.background {
+        case 1: shades = [(0.055, 0.066, 0.115), (0.10, 0.11, 0.18), (0.13, 0.14, 0.22), (0.18, 0.19, 0.28)]   // Midnight
+        case 2: shades = [(0, 0, 0), (0.085, 0.085, 0.085), (0.13, 0.13, 0.13), (0.18, 0.18, 0.18)]           // Black
+        case 3:                                                                                                // Tinted
+            let a = rgb(state.accentColor), base: Double = 0.07
+            shades = [0.10, 0.16, 0.21, 0.30].map { (k: Double) -> (Double, Double, Double) in
+                (base + (a.0 - base) * k, base + (a.1 - base) * k, base + (a.2 - base) * k)
+            }
+        default: shades = [(0.122, 0.122, 0.118), (0.165, 0.165, 0.157), (0.19, 0.19, 0.18), (0.22, 0.22, 0.21)] // Charcoal
+        }
+        let c = shades.map { Color(red: $0.0, green: $0.1, blue: $0.2) }
+        bg = c[0]; panel = c[1]; raise = c[2]; line = c[3]
+    }
+
+    /// accent with its hue nudged both ways, like the PC app's gradient
     static func grad(_ accent: Color) -> LinearGradient {
-        LinearGradient(colors: [Color(red: 0.39, green: 0.40, blue: 0.95), accent, Color(red: 0.75, green: 0.33, blue: 0.95)],
+        LinearGradient(colors: [shift(accent, hue: -0.075, light: 0.04), accent, shift(accent, hue: 0.11, light: 0.03)],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+    private static func shift(_ c: Color, hue dh: CGFloat, light dl: CGFloat) -> Color {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(c).getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        if s < 0.12 { return Color(hue: h, saturation: s, brightness: min(1, b + dl * 3)) } // greys: just lighter
+        return Color(hue: (h + dh + 1).truncatingRemainder(dividingBy: 1), saturation: s, brightness: min(1, b + dl))
+    }
+    private static func rgb(_ c: Color) -> (Double, Double, Double) {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(c).getRed(&r, green: &g, blue: &b, alpha: &a)
+        return (Double(r), Double(g), Double(b))
     }
 }
 
@@ -147,6 +178,12 @@ struct ChatView: View {
 }
 
 extension View {
+    /// lists and sheets use the chosen background instead of the system grey
+    func themedList() -> some View {
+        self.scrollContentBackground(.hidden)
+            .background(Theme.bg.ignoresSafeArea())
+            .presentationBackground(Theme.bg)
+    }
     @ViewBuilder func symbolEffectIfAvailable(_ on: Bool) -> some View {
         if #available(iOS 17.0, *) { self.symbolEffect(.pulse, isActive: on) } else { self }
     }
@@ -242,6 +279,7 @@ struct StreamingView: View {
 
 /// Paragraphs with **bold**/`code` and fenced code blocks.
 struct RichText: View {
+    @EnvironmentObject var state: AppState // redraws code blocks when the look changes
     let text: String
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -286,6 +324,7 @@ struct ChatListView: View {
                 }
             }
             .searchable(text: $query, prompt: "Search chats")
+            .themedList()
             .navigationTitle("Chats")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
@@ -330,6 +369,7 @@ struct ModelsView: View {
                     }.padding(.vertical, 4)
                 }
             }
+            .themedList()
             .navigationTitle("Models")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
@@ -344,13 +384,34 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 6), spacing: 12) {
+                        ForEach(ACCENTS.indices, id: \.self) { i in
+                            Button { withAnimation(.easeOut(duration: 0.2)) { state.accent = i } } label: {
+                                Circle().fill(Theme.grad(ACCENTS[i].1)).frame(width: 34, height: 34)
+                                    .overlay(Circle().stroke(Color.white, lineWidth: state.accent == i ? 2.5 : 0).padding(-4))
+                                    .overlay(Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.white).opacity(state.accent == i ? 1 : 0))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(ACCENTS[i].0)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                    ColorPicker(selection: state.customAccentBinding, supportsOpacity: false) {
+                        HStack {
+                            Text("Pick any color")
+                            if state.accent == CUSTOM_ACCENT { Text("· yours").foregroundStyle(Theme.mute) }
+                        }
+                    }
+                    Picker("Background", selection: $state.background) {
+                        ForEach(BACKGROUNDS.indices, id: \.self) { i in Text(BACKGROUNDS[i]).tag(i) }
+                    }
+                    .pickerStyle(.segmented)
+                } header: { Text("Look") } footer: { Text("Your color is used for buttons, the send button, \(state.assistantName)'s avatar and highlights. Tinted mixes it into the background too.") }
                 Section("Assistant") {
                     TextField("Name", text: $state.assistantName)
-                    Picker("Accent color", selection: $state.accent) {
-                        ForEach(ACCENTS.indices, id: \.self) { i in Text(ACCENTS[i].0).tag(i) }
-                    }
                     Toggle("Read replies out loud", isOn: $state.readAloud)
-                    Toggle("Let Qwen3 think first (slower, smarter)", isOn: $state.think)
+                    Toggle("Let Forge think first (slower, smarter)", isOn: $state.think)
                 }
                 Section("Instructions") {
                     TextField("Custom instructions (optional)", text: $state.systemPrompt, axis: .vertical).lineLimit(3...8)
@@ -365,9 +426,10 @@ struct SettingsView: View {
                     }
                 } header: { Text("Performance") } footer: { Text("Bigger chat memory remembers more of long chats but uses more of the iPhone's memory. Changes apply the next time a model loads.") }
                 Section {
-                    Text("LARP.AI for iPhone 1.0 · runs llama.cpp on the iPhone's GPU. No accounts, no cloud, no tracking.").font(.footnote).foregroundStyle(Theme.mute)
+                    Text("LARP.AI for iPhone \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") · made by Th3Monke. Runs 100% on your iPhone's GPU. No accounts, no cloud, no tracking.").font(.footnote).foregroundStyle(Theme.mute)
                 }
             }
+            .themedList()
             .navigationTitle("Settings")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }

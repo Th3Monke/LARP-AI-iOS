@@ -3,28 +3,25 @@ import Foundation
 struct ModelInfo: Identifiable, Hashable {
     let id: String
     let name: String
+    let base: String          // the open model it's built on; never shown, only told if someone asks directly
     let size: String
     let bytes: Int64
     let minRAMGB: Double
     let note: String
     let url: URL
-    let qwen3: Bool
+    let thinks: Bool          // can reason before answering (turned off with /no_think)
 }
 
-/// Phone-sized models (all run fully offline once downloaded).
+/// Phone-sized LARP.AI models, same names as on the PC (all run fully offline once downloaded).
 let MODEL_CATALOG: [ModelInfo] = [
-    ModelInfo(id: "gemma3-1b", name: "Gemma 3 1B", size: "0.8 GB", bytes: 806_058_272, minRAMGB: 3,
-              note: "Fast and light. Works on almost any recent iPhone.", url: URL(string: "https://huggingface.co/ggml-org/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf")!, qwen3: false),
-    ModelInfo(id: "llama32-1b", name: "Llama 3.2 1B", size: "0.8 GB", bytes: 807_694_464, minRAMGB: 3,
-              note: "Meta's tiny all-rounder. Quick answers.", url: URL(string: "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf")!, qwen3: false),
-    ModelInfo(id: "qwen3-1.7b", name: "Qwen3 1.7B", size: "1.8 GB", bytes: 1_834_426_016, minRAMGB: 6,
-              note: "Small but smart, good at reasoning and code.", url: URL(string: "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf")!, qwen3: true),
-    ModelInfo(id: "llama32-3b", name: "Llama 3.2 3B", size: "2 GB", bytes: 2_019_377_696, minRAMGB: 6,
-              note: "Noticeably smarter. Best on iPhone 15 Pro and newer.", url: URL(string: "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf")!, qwen3: false),
-    ModelInfo(id: "gemma3-4b", name: "Gemma 3 4B", size: "2.5 GB", bytes: 2_489_757_856, minRAMGB: 8,
-              note: "The smartest that fits a phone. Needs 8 GB RAM (iPhone 15 Pro or newer).", url: URL(string: "https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf")!, qwen3: false),
-    ModelInfo(id: "qwen3-4b", name: "Qwen3 4B", size: "2.5 GB", bytes: 2_497_280_256, minRAMGB: 8,
-              note: "Great at reasoning and code. Needs 8 GB RAM (iPhone 15 Pro or newer).", url: URL(string: "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf")!, qwen3: true),
+    ModelInfo(id: "gemma3-1b", name: "Scout 2.5", base: "Gemma 3 1B", size: "0.8 GB", bytes: 806_058_272, minRAMGB: 3,
+              note: "The tiny, quick one. Works on almost any recent iPhone.", url: URL(string: "https://huggingface.co/ggml-org/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf")!, thinks: false),
+    ModelInfo(id: "qwen3-1.7b", name: "Forge 3", base: "Qwen3 1.7B", size: "1.8 GB", bytes: 1_834_426_016, minRAMGB: 6,
+              note: "Small but smart, good at reasoning and code.", url: URL(string: "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf")!, thinks: true),
+    ModelInfo(id: "gemma3-4b", name: "Oracle 3.5", base: "Gemma 3 4B", size: "2.5 GB", bytes: 2_489_757_856, minRAMGB: 8,
+              note: "The best all-rounder that fits a phone. Needs 8 GB RAM (iPhone 15 Pro or newer).", url: URL(string: "https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf")!, thinks: false),
+    ModelInfo(id: "qwen3-4b", name: "Forge 3.5", base: "Qwen3 4B", size: "2.5 GB", bytes: 2_497_280_256, minRAMGB: 8,
+              note: "The thinker: great at reasoning and code. Needs 8 GB RAM (iPhone 15 Pro or newer).", url: URL(string: "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf")!, thinks: true),
 ]
 
 var deviceRAMGB: Double { Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824 }
@@ -49,6 +46,8 @@ final class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate
 
     override init() {
         super.init()
+        // models from older versions that aren't offered any more would just take up storage
+        for gone in ["llama32-1b", "llama32-3b"] { try? FileManager.default.removeItem(at: Self.file(for: gone)) }
         refresh()
     }
 
