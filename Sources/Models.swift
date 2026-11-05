@@ -42,12 +42,21 @@ final class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
-    nonisolated static func file(for id: String) -> URL { folder.appendingPathComponent("\(id).gguf") }
+    /// Files use LARP.AI names (they show in the Files app); the internal ids stay the same.
+    nonisolated static let fileNames = ["gemma3-1b": "scout-2.5", "qwen3-1.7b": "forge-3", "gemma3-4b": "oracle-3.5", "qwen3-4b": "forge-3.5"]
+    nonisolated static func file(for id: String) -> URL { folder.appendingPathComponent("\(fileNames[id] ?? id).gguf") }
 
     override init() {
         super.init()
         // models from older versions that aren't offered any more would just take up storage
-        for gone in ["llama32-1b", "llama32-3b"] { try? FileManager.default.removeItem(at: Self.file(for: gone)) }
+        for gone in ["llama32-1b", "llama32-3b"] { try? FileManager.default.removeItem(at: Self.folder.appendingPathComponent("\(gone).gguf")) }
+        // files from older versions were named after the original models (gemma3-1b.gguf …)
+        for (id, name) in Self.fileNames {
+            let old = Self.folder.appendingPathComponent("\(id).gguf"), new = Self.folder.appendingPathComponent("\(name).gguf")
+            if FileManager.default.fileExists(atPath: old.path) && !FileManager.default.fileExists(atPath: new.path) {
+                try? FileManager.default.moveItem(at: old, to: new)
+            }
+        }
         refresh()
     }
 
