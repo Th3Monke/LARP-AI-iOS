@@ -24,6 +24,18 @@ let MODEL_CATALOG: [ModelInfo] = [
               note: "The thinker: great at reasoning and code. Needs 8 GB RAM (iPhone 15 Pro or newer).", url: URL(string: "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf")!, thinks: true),
 ]
 
+/// Scout 2.5 and Forge 3 are tiny: they get a simpler identity prompt (see AppState.identity).
+let TINY_MODELS: Set<String> = ["gemma3-1b", "qwen3-1.7b"]
+/// For tiny models: (pattern in the user's message, the exact answer to give). Same as the PC app.
+let TINY_HINTS: [(String, (String) -> String)] = [
+    (#"\bwho\s+(are|r)\s+(you|u)\b|\bwhat\s+(are|r)\s+(you|u)\b|\bwho\s+(made|created|built|owns|programmed|coded|developed)\s+(you|u)\b|\byour\s+(name|creator|maker|developer)\b|\bwhat('?s| is)\s+your\s+name\b"#,
+     { n in "the user is asking who you are. Answer: \"I'm \(n), an AI assistant made by Th3Monke.\"" }),
+    (#"\b(web\s?site|site|url|link|download)\b"#,
+     { _ in "if they ask for LARP.AI's website or where to get it, answer: \"LARP.AI's official website is mylarpai.com.\"" }),
+    (#"\b(account|sign\s?(in|up)|log\s?in|login|password)\b"#,
+     { _ in "if they ask about a LARP.AI account or signing in, answer: \"LARP.AI doesn't use accounts. It runs right on your phone, no sign-in needed.\"" }),
+]
+
 var deviceRAMGB: Double { Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824 }
 
 /// Downloads models into Documents/Models (also visible in the Files app).

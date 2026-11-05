@@ -241,6 +241,26 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Who the assistant is, the same as the PC app. Tiny models recite or mix up any list of facts,
+    /// so they get short examples plus only the one fact the message needs.
+    private func identity(_ m: ModelInfo, name: String, question: String) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.dateFormat = "EEEE, MMMM d, yyyy"
+        let today = f.string(from: Date())
+        if TINY_MODELS.contains(m.id) {
+            var s = "\n\nToday is \(today). You can't go online. Keep answers short and simple. If you don't know something, say you're not sure instead of guessing."
+                + "\n\nExamples of good answers:\nUser: Hello\nYou: Hi! What can I help you with?\nUser: What's the capital of Japan?\nYou: Tokyo.\nUser: How many followers does a famous singer have?\nYou: I can't go online, so I don't know the current number.\nUser: Who is Zentrix AI?\nYou: I'm not sure. I don't know anything about Zentrix AI."
+            if let hint = TINY_HINTS.first(where: { question.range(of: $0.0, options: [.regularExpression, .caseInsensitive]) != nil }) {
+                s += "\n\nFor this message: " + hint.1(name)
+            }
+            return s
+        }
+        return "\n\nFacts about you (only bring them up when someone asks):\n- Your name is \(name). Th3Monke made you.\n- You are the \(m.name) model, one of LARP.AI's models.\n- LARP.AI runs fully on the user's own device: there are no accounts, no sign-in and no cloud.\n- LARP.AI's official website is mylarpai.com (downloads, updates and LARP.AI Pro).\n- You are built on an open model (\(m.base)). Don't bring that up yourself; only if someone asks directly whether you are based on an existing or open-source model, answer truthfully."
+            + "\n\nExamples of good answers:\nUser: Hello\nYou: Hi! What can I help you with?\nUser: Who made you?\nYou: I'm \(name), made by Th3Monke.\nUser: Who is Zentrix AI?\nYou: I'm not sure. I don't know anything about Zentrix AI."
+            + "\n\nToday is \(today). You can't go online and what you know stops at your training, so for things that change (news, prices, follower counts, scores) say your information may be out of date. If you're not sure about something, say so instead of making it up."
+    }
+
     /// What the model reads for a message: the text, plus the newest uploads in full (older ones by name).
     private func content(_ msg: ChatMessage, full: Bool) -> String {
         guard let files = msg.files, !files.isEmpty else { return msg.text }
@@ -275,7 +295,7 @@ final class AppState: ObservableObject {
         var sys = (systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? "You are \(name), a helpful AI assistant running fully offline on the user's iPhone. Keep answers clear and reasonably short."
             : systemPrompt)
-            + "\n\nAbout you: you are \(name), an AI assistant made by Th3Monke. You are the \(m.name) model. When someone asks who you are or who made you, say you are \(name), made by Th3Monke. When someone asks what model you are, say \(m.name), one of LARP.AI's models. Don't bring up the open model you are built on (\(m.base)) yourself; only if someone asks directly whether you are based on an existing or open-source model, answer truthfully."
+            + identity(m, name: name, question: all.last(where: { $0.role == "user" })?.text ?? "")
         if voice {
             sys += "\n\nThe user is talking to you out loud and your reply will be spoken by a voice. Keep it short and natural, usually one to three sentences. No markdown, lists, emojis or code unless they ask."
         } else if picturesSupported {
